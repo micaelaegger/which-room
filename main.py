@@ -1,44 +1,18 @@
 import os
-import asyncio
 
 from dotenv import load_dotenv
-from icalendar import Calendar
-from dataclasses import dataclass
-from datetime import datetime, date
-from zoneinfo import ZoneInfo
 
-
-from schedule import fetch_ical, parse_lessons, lessons_for_day, format_message
-
-TZ = ZoneInfo("Europe/Stockholm")
-
+from bot import RoomBot
 
 load_dotenv()
-url = os.getenv("ICAL_URL")
 
+token = os.getenv("DISCORD_TOKEN")
+ical_url = os.getenv("ICAL_URL")
+channel_id = os.getenv("CHANNEL_ID")
 
-async def main():
-    data = await fetch_ical(url)
-    lessons = parse_lessons(data)
+# Fail early with a clear message if something is missing in .env
+if not token or not ical_url or not channel_id:
+    raise SystemExit("Missing DISCORD_TOKEN, ICAL_URL or CHANNEL_ID in .env")
 
-    # Test days: course start, same room, different rooms, no lessons
-    test_days = [
-        date(2026, 11, 9),
-        date(2026, 11, 16),
-        date(2026, 11, 11),
-        date(2026, 11, 7),
-    ]
-
-    for day in test_days:
-        print(f"--- {day} ---")
-        todays_lessons = lessons_for_day(lessons, day)
-
-        if not todays_lessons:
-            print("(inga lektioner, inget meddelande skickas)")
-            continue
-
-        print(format_message(todays_lessons, lessons))
-        print()
-
-
-asyncio.run(main())
+bot = RoomBot(ical_url, int(channel_id))
+bot.run(token)  # starts the bot - no asyncio.run needed, discord.py handles it
