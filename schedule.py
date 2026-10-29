@@ -1,7 +1,7 @@
 import aiohttp
 from icalendar import Calendar
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, date
 from zoneinfo import ZoneInfo
 
 from exceptions import ScheduleError
@@ -37,7 +37,6 @@ class Lesson:
 
 
 def parse_lessons(data: bytes) -> list[Lesson]:
-
     # converts bytes to a calendar object
     cal = Calendar.from_ical(data)
 
@@ -53,10 +52,42 @@ def parse_lessons(data: bytes) -> list[Lesson]:
         lecturer = parts[-2].strip()
         course = parts[-1].strip()
 
+        # TimeEdit labels guest lectures as "Aktivitet", assigning a clearer name
+        if lecturer == "Gästföreläsare":
+            course = "Gästföreläsning"
+
         lesson = Lesson(start, end, location, course, lecturer)
-
-        print(lesson)
-
         lessons.append(lesson)
 
     return lessons
+
+
+def lessons_for_day(lessons: list[Lesson], day: date) -> list[Lesson]:
+    todays_lessons = []
+
+    for lesson in lessons:
+        if day == lesson.start.date():
+            todays_lessons.append(lesson)
+
+    return todays_lessons
+
+
+def format_message(lessons: list[Lesson]) -> str:
+    if not lessons:
+        return
+
+    # set of unique rooms, duplicates are removed, is a list
+    rooms = {lesson.location for lesson in lessons}
+
+    if len(rooms) == 1:
+        room = lessons[0].location
+        return f"☀️ Godmorgon! Idag är vi i sal **{room}** hela dagen!"
+
+    lines = ["☀️ Godmorgon! Dagens salar:"]
+
+    for lesson in lessons:
+        lines.append(
+            f"{lesson.start:%H:%M}–{lesson.end:%H:%M} {lesson.course} **{lesson.location}**"
+        )
+
+    return "\n".join(lines)
