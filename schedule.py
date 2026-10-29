@@ -72,22 +72,52 @@ def lessons_for_day(lessons: list[Lesson], day: date) -> list[Lesson]:
     return todays_lessons
 
 
-def format_message(lessons: list[Lesson]) -> str:
-    if not lessons:
-        return
+def is_new_course(lesson: Lesson, all_lessons: list[Lesson]) -> bool:
+    if lesson.course == "Gästföreläsning":
+        return False
+
+    for other in all_lessons:
+        # Same course, earlier start: the course has already begun
+        if other.course == lesson.course and other.start < lesson.start:
+            return False
+
+    return True
+
+
+def find_course_start(
+    lessons: list[Lesson], all_lessons: list[Lesson]
+) -> Lesson | None:
+    """Returns today's first lesson of a new course, or None if no course starts today."""
+    for lesson in lessons:
+        if is_new_course(lesson, all_lessons):
+            return lesson
+    return None
+
+
+def format_message(lessons: list[Lesson], all_lessons: list[Lesson]) -> str:
+    """Builds the morning message. Expects lessons to be today's (non-empty) lessons."""
+
+    course_start = find_course_start(lessons, all_lessons)
 
     # set of unique rooms, duplicates are removed, is a list
     rooms = {lesson.location for lesson in lessons}
 
+    # greeting
+    if course_start:
+        lines = [
+            f"☀️ Godmorgon! Idag är det kursstart i **{course_start.course}** "
+            f"med {course_start.lecturer} 📚",
+        ]
+    else:
+        lines = ["☀️ Godmorgon!"]
+
+    # rooms
     if len(rooms) == 1:
-        room = lessons[0].location
-        return f"☀️ Godmorgon! Idag är vi i sal **{room}** hela dagen!"
-
-    lines = ["☀️ Godmorgon! Dagens salar:"]
-
-    for lesson in lessons:
-        lines.append(
-            f"{lesson.start:%H:%M}–{lesson.end:%H:%M} {lesson.course} **{lesson.location}**"
-        )
+        lines.append(f"Vi är i sal **{lessons[0].location}** hela dagen.")
+    else:
+        for lesson in lessons:
+            lines.append(
+                f"{lesson.start:%H:%M}–{lesson.end:%H:%M} {lesson.course} **{lesson.location}**"
+            )
 
     return "\n".join(lines)
