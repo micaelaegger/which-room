@@ -61,7 +61,7 @@ class RoomBot(discord.Client):
             print(f"Could not fetch schedule: {e}")
             try:
                 channel = await self.get_channel_to_post()
-                await channel.send("Kunde inte hämta schemat idag, kolla TimeEdit.")
+                await channel.send("⚠️ Kunde inte hämta schemat idag, kolla TimeEdit.")
             except discord.HTTPException as e:
                 print(f"Could not send warning: {e}")
 
