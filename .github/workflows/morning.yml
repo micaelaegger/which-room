@@ -1,0 +1,25 @@
+name: Morning post
+
+on:
+  schedule:
+    - cron: "0 6 * * 1-5"   # 06:00 UTC = 07:00 Swedish winter time, Mon–Fri
+  workflow_dispatch:         # adds a "Run workflow" button for manual runs
+    inputs:
+      test_date:
+        description: "Test date (YYYY-MM-DD), leave empty for today"
+        required: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -r requirements.txt
+      - run: python post_today.py
+        env:
+          ICAL_URL: ${{ secrets.ICAL_URL }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          TEST_DATE: ${{ inputs.test_date }}
