@@ -100,13 +100,6 @@ def lessons_for_day(lessons: list[Lesson], day: date) -> list[Lesson]:
     return todays_lessons
 
 
-def join_with_och(words: list[str]) -> str:
-    """Joins words like a Swedish sentence: "a", "a och b", "a, b och c"."""
-    if len(words) == 1:
-        return words[0]
-    return ", ".join(words[:-1]) + " och " + words[-1]
-
-
 def format_message(todays_lessons: list[Lesson]) -> str:
     """Builds the morning message. Expects todays_lessons to be non-empty.
 
@@ -121,18 +114,19 @@ def format_message(todays_lessons: list[Lesson]) -> str:
         if lesson.course not in courses:
             courses.append(lesson.course)
 
+    # e.g. "Databashantering och Gästföreläsning"
+    course_names = " och ".join(courses)
+
     lines = ["Godmorgon!"]
 
     if rooms == {""}:
         # no lesson today has a room in the schedule
         lines.append(
-            f"Idag har vi {join_with_och(courses)}. "
-            "Salen står inte i schemat, kolla TimeEdit."
+            f"Idag har vi {course_names}. Salen står inte i schemat, kolla TimeEdit."
         )
     elif len(rooms) == 1:
         lines.append(
-            f"Idag har vi {join_with_och(courses)} "
-            f"i sal **{todays_lessons[0].location}**."
+            f"Idag har vi {course_names} i sal **{todays_lessons[0].location}**."
         )
     else:
         # also used when only some lessons are missing a room,
