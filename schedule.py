@@ -1,16 +1,20 @@
+from dataclasses import dataclass
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
+
 import aiohttp
 from icalendar import Calendar
-from dataclasses import dataclass
-from datetime import datetime, date
-from zoneinfo import ZoneInfo
 
 from exceptions import ScheduleError
 
 TZ = ZoneInfo("Europe/Stockholm")
 
 
-# Returns raw bytes (undecoded data, not str) - icalendar parses this directly.
 async def fetch_ical(url) -> bytes:
+    """Downloads the schedule from TimeEdit and returns it as raw bytes.
+
+    Raises ScheduleError on network errors, bad responses or timeout (10 s).
+    """
     timeout = aiohttp.ClientTimeout(total=10)
     try:
         # Opens session, a connection that makes HTTP-req.
@@ -29,6 +33,8 @@ async def fetch_ical(url) -> bytes:
 
 @dataclass
 class Lesson:
+    """One lesson from the schedule."""
+
     start: datetime
     end: datetime
     location: str
@@ -37,20 +43,41 @@ class Lesson:
 
 
 def parse_lessons(data: bytes) -> list[Lesson]:
-    # converts bytes to a calendar object
-    cal = Calendar.from_ical(data)
+    """Turns the raw schedule into a list of Lesson objects.
+
+    All-day events are skipped. Raises ScheduleError if the data
+    is not a valid calendar (e.g. TimeEdit sent an HTML page).
+    """
+    try:
+        # converts bytes to a calendar object
+        cal = Calendar.from_ical(data)
+    except ValueError as e:
+        raise ScheduleError(f"Schedule is not a valid calendar: {e}") from e
 
     lessons = []
 
     for event in cal.walk("VEVENT"):
-        start = event.decoded("DTSTART").astimezone(TZ)
-        end = event.decoded("DTEND").astimezone(TZ)
-        location = str(event.get("LOCATION"))
-        summary = str(event.get("SUMMARY"))
+        start = event.decoded("DTSTART")
 
+        # all-day events (e.g. an exam day) only have a date, no time: skip them
+        if not isinstance(start, datetime):
+            continue
+
+        start = start.astimezone(TZ)
+        end = event.decoded("DTEND").astimezone(TZ)
+        # a missing room becomes "" (instead of the text "None"), same as an empty room
+        location = str(event.get("LOCATION", "")).strip()
+        summary = str(event.get("SUMMARY", ""))
+
+        # TimeEdit writes the summary as "..., lecturer, course"
         parts = summary.split(", ")
-        lecturer = parts[-2].strip()
-        course = parts[-1].strip()
+        if len(parts) >= 2:
+            lecturer = parts[-2].strip()
+            course = parts[-1].strip()
+        else:
+            # unexpected format: use the whole summary as course name instead of crashing
+            lecturer = ""
+            course = summary.strip()
 
         # TimeEdit labels guest lectures as "Aktivitet", assigning a clearer name
         if lecturer == "Gästföreläsare":
@@ -63,6 +90,7 @@ def parse_lessons(data: bytes) -> list[Lesson]:
 
 
 def lessons_for_day(lessons: list[Lesson], day: date) -> list[Lesson]:
+    """Returns the lessons that start on the given day."""
     todays_lessons = []
 
     for lesson in lessons:
@@ -72,52 +100,64 @@ def lessons_for_day(lessons: list[Lesson], day: date) -> list[Lesson]:
     return todays_lessons
 
 
-def is_new_course(lesson: Lesson, all_lessons: list[Lesson]) -> bool:
-    if lesson.course == "Gästföreläsning":
-        return False
-
-    for other in all_lessons:
-        # Same course, earlier start: the course has already begun
-        if other.course == lesson.course and other.start < lesson.start:
-            return False
-
-    return True
+def join_with_och(words: list[str]) -> str:
+    """Joins words like a Swedish sentence: "a", "a och b", "a, b och c"."""
+    if len(words) == 1:
+        return words[0]
+    return ", ".join(words[:-1]) + " och " + words[-1]
 
 
-def find_course_start(
-    lessons: list[Lesson], all_lessons: list[Lesson]
-) -> Lesson | None:
-    """Returns today's first lesson of a new course, or None if no course starts today."""
-    for lesson in lessons:
-        if is_new_course(lesson, all_lessons):
-            return lesson
-    return None
+def format_message(todays_lessons: list[Lesson]) -> str:
+    """Builds the morning message. Expects todays_lessons to be non-empty.
 
+    Lessons without a room are shown as "sal saknas".
+    """
+    # a set only keeps unique values, so each room appears once
+    rooms = {lesson.location for lesson in todays_lessons}
 
-def format_message(lessons: list[Lesson], all_lessons: list[Lesson]) -> str:
-    """Builds the morning message. Expects lessons to be today's (non-empty) lessons."""
+    # today's courses, each once, in the order they appear
+    courses = []
+    for lesson in todays_lessons:
+        if lesson.course not in courses:
+            courses.append(lesson.course)
 
-    course_start = find_course_start(lessons, all_lessons)
+    lines = ["Godmorgon!"]
 
-    # set of unique rooms, duplicates are removed, is a list
-    rooms = {lesson.location for lesson in lessons}
-
-    # greeting
-    if course_start:
-        lines = [
-            f"☀️ Godmorgon! Idag är det kursstart i **{course_start.course}** "
-            f"med {course_start.lecturer} 📚",
-        ]
+    if rooms == {""}:
+        # no lesson today has a room in the schedule
+        lines.append(
+            f"Idag har vi {join_with_och(courses)}. "
+            "Salen står inte i schemat, kolla TimeEdit."
+        )
+    elif len(rooms) == 1:
+        lines.append(
+            f"Idag har vi {join_with_och(courses)} "
+            f"i sal **{todays_lessons[0].location}**."
+        )
     else:
-        lines = ["☀️ Godmorgon!"]
-
-    # rooms
-    if len(rooms) == 1:
-        lines.append(f"Vi är i sal **{lessons[0].location}** hela dagen.")
-    else:
-        for lesson in lessons:
+        # also used when only some lessons are missing a room,
+        # since that lesson might be somewhere else
+        lines.append("Vi byter sal under dagen:")
+        for lesson in todays_lessons:
+            location = lesson.location or "sal saknas"
             lines.append(
-                f"{lesson.start:%H:%M}–{lesson.end:%H:%M} {lesson.course} **{lesson.location}**"
+                f"{lesson.start:%H:%M}–{lesson.end:%H:%M} {lesson.course} **{location}**"
             )
 
     return "\n".join(lines)
+
+
+async def build_message_for_day(ical_url: str, day: date) -> str | None:
+    """Fetches the schedule and returns the message for the given day,
+    or None if there are no lessons that day.
+
+    Raises ScheduleError if the schedule can't be fetched or read.
+    """
+    data = await fetch_ical(ical_url)
+    all_lessons = parse_lessons(data)
+    todays_lessons = lessons_for_day(all_lessons, day)
+
+    if not todays_lessons:
+        return None
+
+    return format_message(todays_lessons)
