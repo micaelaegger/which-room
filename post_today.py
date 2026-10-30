@@ -45,7 +45,7 @@ async def main():
         message = await build_message_for_day(ical_url, day)
     except ScheduleError:
         await send_to_discord(
-            webhook_url, "Kunde inte hämta schemat idag, kolla TimeEdit."
+            webhook_url, "⚠️ Kunde inte hämta schemat idag, kolla TimeEdit."
         )
         # raise the error again so the GitHub run is marked as failed and you get an email
         raise

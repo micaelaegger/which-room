@@ -126,7 +126,7 @@ def format_message(todays_lessons: list[Lesson]) -> str:
         )
     elif len(rooms) == 1:
         lines.append(
-            f"Idag har vi {course_names} i sal **{todays_lessons[0].location}**."
+            f"📍 Idag har vi {course_names} i sal **{todays_lessons[0].location}**."
         )
     else:
         # also used when only some lessons are missing a room,

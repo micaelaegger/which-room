@@ -6,7 +6,7 @@ Example messages (the bot writes in Swedish):
 
 ```
 Godmorgon!
-Idag har vi Databashantering i sal **B201**.
+📍 Idag har vi Databashantering i sal **B201**.
 ```
 
 ```
